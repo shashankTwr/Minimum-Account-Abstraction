@@ -64,6 +64,7 @@ contract MinimalAccountTest is Test {
         minimalAccount.execute(dest, value, functionData);
     }
 
+    // testRecoverSignedOp created to test that the account signing the operation is correct and matches the signature recovered by ECDSA algorithm
     function testRecoverSignedOp() public {
         // Arrange
         assertEq(usdc.balanceOf(address(minimalAccount)), 0);
@@ -86,5 +87,31 @@ contract MinimalAccountTest is Test {
         assertEq(actualSigner, minimalAccount.owner());
     }
 
-    // function testValidationOfUserOps() public {}
+    // 1. Sign user ops
+    // 2. call validate user ops
+    // 3. assert the return is correct
+    function testValidationOfUserOps() public {
+        // Arrange
+        assertEq(usdc.balanceOf(address(minimalAccount)), 0);
+        address dest = address(usdc);
+        uint256 value = 0;
+        bytes memory functionData =
+            abi.encodeWithSelector(ERC20Mock.mint.selector, address(minimalAccount), MINT_AMOUNT);
+
+        bytes memory executeCallData =
+            abi.encodeWithSelector(MinimalAccount.execute.selector, dest, value, functionData);
+
+        PackedUserOperation memory packedUserOp =
+            sendPackedUserOp.generatedSignedUserOperation(executeCallData, helperConfig.getConfig());
+
+        bytes32 userOperationHash = IEntryPoint(helperConfig.getConfig().entryPoint).getUserOpHash(packedUserOp);
+        uint256 missingAccountFunds = 1e18;
+
+        // Act
+        vm.prank(helperConfig.getConfig().entryPoint);
+        uint256 validationData = minimalAccount.validateUserOp(packedUserOp, userOperationHash, missingAccountFunds);
+        assertEq(validationData, 0);
+    }
+
+    function testEntryPointCanExecuteCommands() public {}
 }
