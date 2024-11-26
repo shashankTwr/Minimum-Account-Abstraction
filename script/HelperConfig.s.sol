@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import {Script, console2} from "forge-std/Script.sol";
 import {EntryPoint} from "lib/account-abstraction/contracts/core/EntryPoint.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 
 struct NetworkConfig {
     address entryPoint;
@@ -55,6 +56,7 @@ contract HelperConfig is Script {
         // deploy a mock entry point contract
         console2.log("Deploying mocks..");
         vm.startBroadcast(ANVIL_DEFAULT_ACCOUNT);
+        ERC20Mock usdc = new ERC20Mock();
         EntryPoint entryPoint = new EntryPoint();
         vm.stopBroadcast();
 

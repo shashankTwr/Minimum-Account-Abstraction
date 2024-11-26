@@ -10,3 +10,6 @@
 1:09:13:39 - SIgned PackedUserOperation
 1:09:36:09 - Using unlocked accounts for local development
 1:09:40:05 - Test Validation of User Ops
+1:09:44:23 - Test Entry Point
+1:09:49:35 - Advanced Debugging
+1:09:53:54 - Mid-Session Recap
