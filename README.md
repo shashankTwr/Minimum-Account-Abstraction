@@ -6,6 +6,11 @@
    1. not going to send an AA to ethereum
    2. but we will send an AA tx to zksync
 
+## Deployed
+
+1. Arbitrum AA contract deployed
+   1. 0xDd75fCeb66BA096177322518C89C6080CdC8321A
+
 ## Mid-Session Recap
 
 <blockquote>
@@ -16,3 +21,8 @@ UserOp will call our contract and call our custom logic and check the custom log
 </blockquote>
 
 <img src="./img/account-abstraction-again.png">
+
+
+
+## zkSync Native Account transaction
+

@@ -5,14 +5,33 @@ pragma solidity ^0.8.19;
 import {Script} from "forge-std/Script.sol";
 import {MinimalAccount} from "../src/ethereum/MinimalAccount.sol";
 import {PackedUserOperation} from "lib/account-abstraction/contracts/interfaces/PackedUserOperation.sol";
-import {NetworkConfig} from "script/HelperConfig.s.sol";
+import {NetworkConfig, HelperConfig} from "script/HelperConfig.s.sol";
 import {IEntryPoint} from "lib/account-abstraction/contracts/interfaces/IEntryPoint.sol";
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract SendPackedUserOp is Script {
     using MessageHashUtils for bytes32;
 
-    function run() public {}
+    address random_wallet = makeAddr("random_wallet");
+
+    function run() public {
+        HelperConfig helperConfig = new HelperConfig();
+        NetworkConfig memory config = helperConfig.getConfig();
+        address dest = address(0); // arbitrum mainnet USDC address
+        uint256 value = 0;
+        bytes memory functionData = abi.encodeWithSelector(IERC20.approve.selector, random_wallet);
+        bytes memory executeCallData =
+            abi.encodeWithSelector(MinimalAccount.execute.selector, dest, value, functionData);
+        PackedUserOperation memory userOp =
+            generatedSignedUserOperation(executeCallData, helperConfig.getConfig(), address(0));
+        // 3rd should be address of the contract
+        PackedUserOperation[] memory ops = new PackedUserOperation[](1);
+        ops[0] = userOp;
+        vm.startBroadcast();
+
+        IEntryPoint(config.entryPoint).handleOps(ops, payable(config.account));
+    }
 
     function generatedSignedUserOperation(bytes memory callData, NetworkConfig memory config, address minimalAccount)
         public
