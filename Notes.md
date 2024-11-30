@@ -23,3 +23,7 @@ zkSync Native Account Abstraction
     1:10:25:11 - TxType 113 Lifecycle
     1:10:31:21 - Mid-zkSync Recap
     1:10:33:59 - Systems Contract call zkSync Simulations
+    1:11:06:57 - payForTransaction
+    1:11:09:00 - executeTransactionFromOutside
+    1:11:16:11 - Zksync tests
+    

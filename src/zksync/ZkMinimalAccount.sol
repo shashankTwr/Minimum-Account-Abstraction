@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
+// zksync era imports
 import {
     IAccount,
     ACCOUNT_VALIDATION_SUCCESS_MAGIC
 } from "lib/foundry-era-contracts/src/system-contracts/contracts/interfaces/IAccount.sol";
 import {
     Transaction,
-    MemoryTransactionHelper,
-    EIP_712_TX_TYPE
-} from "lib/foundry-era-contracts/src/system-contracts/contracts//libraries/MemoryTransactionHelper.sol";
+    MemoryTransactionHelper
+} from "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/MemoryTransactionHelper.sol";
 import {SystemContractsCaller} from
     "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/SystemContractsCaller.sol";
 import {
     NONCE_HOLDER_SYSTEM_CONTRACT,
-    BOOTLOADER_FORMAL_ADDRESS
+    BOOTLOADER_FORMAL_ADDRESS,
+    DEPLOYER_SYSTEM_CONTRACT
 } from "lib/foundry-era-contracts/src/system-contracts/contracts/Constants.sol";
 import {INonceHolder} from "lib/foundry-era-contracts/src/system-contracts/contracts/interfaces/INonceHolder.sol";
+import {Utils} from "lib/foundry-era-contracts/src/system-contracts/contracts/libraries/Utils.sol";
+
+//0z imports
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
@@ -49,6 +53,10 @@ contract ZkMinimalAccount is IAccount, Ownable {
     //////////////////////////////////////////////////////////////*/
     error ZkMinimalAccount__NotEnoughBalance();
     error ZkMinimalAccount__NotFromBootLoader();
+    error ZkMinimalAccount__ExecutionFailed();
+    error ZkMinimalAccount__NeitherFromBootLoaderNorOwner();
+    error ZkMinimalAccount__FailedToPay();
+    error ZkMinimalAccount__ValidationFailed();
 
     /*//////////////////////////////////////////////////////////////
                                 MODIFIER
@@ -60,14 +68,23 @@ contract ZkMinimalAccount is IAccount, Ownable {
         _;
     }
 
+    modifier requireFromBootLoaderOrOwner() {
+        if (msg.sender != BOOTLOADER_FORMAL_ADDRESS && msg.sender != owner()) {
+            revert ZkMinimalAccount__NeitherFromBootLoaderNorOwner();
+        }
+        _;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     constructor() Ownable(msg.sender) {}
+    receive() external payable {}
 
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+
     /*
     /// @notice Must increase the nonce
     /// @notice Must validate the transaction (check the owner signed the transaction)
@@ -82,6 +99,54 @@ contract ZkMinimalAccount is IAccount, Ownable {
         bytes32, /* _suggestedSignedHash */
         Transaction calldata _transaction
     ) external payable requireFromBootLoader returns (bytes4 magic) {
+        return _validateTransaction(_transaction);
+    }
+
+    function executeTransaction(
+        bytes32, /* _txHash */
+        bytes32, /* _suggestedSignedHash */
+        Transaction calldata _transaction
+    ) external payable {
+        _executeTransaction(_transaction);
+    }
+
+    // you signed a tx
+    // send a signed tx to your friend
+    // they can send it by calling this function
+
+    // There is no point in providing possible signed hash in the `executeTransactionFromOutside` method,
+    // since it typically should not be trusted.
+    function executeTransactionFromOutside(Transaction calldata _transaction) external payable {
+        bytes4 magic = _validateTransaction(_transaction);
+        if (magic != bytes4(0)) {
+            revert ZkMinimalAccount__ValidationFailed();
+        }
+        _executeTransaction(_transaction);
+    }
+
+    function payForTransaction(
+        bytes32, /* _txHash */
+        bytes32, /* _suggestedSignedHash */
+        Transaction calldata _transaction
+    ) external payable {
+        bool success = _transaction.payToTheBootloader();
+        if (!success) {
+            revert ZkMinimalAccount__FailedToPay();
+        }
+        _executeTransaction(_transaction);
+    }
+
+    // Called when u are a paymaster
+    function prepareForPaymaster(
+        bytes32, /* _txHash */
+        bytes32, /* _possibleSignedHash */
+        Transaction calldata _transaction
+    ) external payable {}
+
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    function _validateTransaction(Transaction calldata _transaction) internal returns (bytes4 magic) {
         // Call nonceholder
         // increment nonce
         // call(x,y,z) -> system contract call
@@ -109,35 +174,25 @@ contract ZkMinimalAccount is IAccount, Ownable {
         } else {
             magic = bytes4(0);
         }
+        return magic;
     }
 
-    function executeTransaction(
-        bytes32, /* _txHash */
-        bytes32, /* _suggestedSignedHash */
-        Transaction calldata _transaction
-    ) external payable {}
+    function _executeTransaction(Transaction calldata _transaction) internal requireFromBootLoaderOrOwner {
+        address to = address(uint160(_transaction.to)); //uint256 to add
+        uint128 value = Utils.safeCastToU128(_transaction.value);
+        bytes memory data = _transaction.data;
 
-    /* 
-    // you signed a tx
-    // send a signed tx to your friend
-    // they can send it by calling this function
-
-    // There is no point in providing possible signed hash in the `executeTransactionFromOutside` method,
-    // since it typically should not be trusted.
-    function executeTransactionFromOutside(Transaction calldata _transaction) external payable {}
-
-    function payForTransaction(bytes32 _txHash, bytes32 _suggestedSignedHash, Transaction calldata _transaction)
-        external
-        payable
-    {}
-
-    // Called when u are a paymaster
-    function prepareForPaymaster(bytes32 _txHash, bytes32 _possibleSignedHash, Transaction calldata _transaction)
-        external
-        payable
-    {} */
-
-    /*//////////////////////////////////////////////////////////////
-                           INTERNAL FUNCTIONS
-    //////////////////////////////////////////////////////////////*/
+        if (to == address(DEPLOYER_SYSTEM_CONTRACT)) {
+            uint32 gas = Utils.safeCastToU32(gasleft());
+            SystemContractsCaller.systemCallWithPropagatedRevert(gas, to, value, data);
+        } else {
+            bool success;
+            assembly {
+                success := call(gas(), to, value, add(data, 0x20), mload(data), 0, 0)
+            }
+            if (!success) {
+                revert ZkMinimalAccount__ExecutionFailed();
+            }
+        }
+    }
 }
